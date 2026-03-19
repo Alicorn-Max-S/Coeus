@@ -364,36 +364,19 @@ def _onboard_plugins(config_path: Path) -> None:
 def _make_provider(config: Config):
     """Create the appropriate LLM provider from config."""
     from nanobot.providers.base import GenerationSettings
-    from nanobot.providers.openai_codex_provider import OpenAICodexProvider
-    from nanobot.providers.azure_openai_provider import AzureOpenAIProvider
 
     model = config.agents.defaults.model
     provider_name = config.get_provider_name(model)
     p = config.get_provider(model)
 
-    # OpenAI Codex (OAuth)
-    if provider_name == "openai_codex" or model.startswith("openai-codex/"):
-        provider = OpenAICodexProvider(default_model=model)
     # Custom: direct OpenAI-compatible endpoint, bypasses LiteLLM
-    elif provider_name == "custom":
+    if provider_name == "custom":
         from nanobot.providers.custom_provider import CustomProvider
         provider = CustomProvider(
             api_key=p.api_key if p else "no-key",
             api_base=config.get_api_base(model) or "http://localhost:8000/v1",
             default_model=model,
             extra_headers=p.extra_headers if p else None,
-        )
-    # Azure OpenAI: direct Azure OpenAI endpoint with deployment name
-    elif provider_name == "azure_openai":
-        if not p or not p.api_key or not p.api_base:
-            console.print("[red]Error: Azure OpenAI requires api_key and api_base.[/red]")
-            console.print("Set them in ~/.nanobot/config.json under providers.azure_openai section")
-            console.print("Use the model field to specify the deployment name.")
-            raise typer.Exit(1)
-        provider = AzureOpenAIProvider(
-            api_key=p.api_key,
-            api_base=p.api_base,
-            default_model=model,
         )
     else:
         from nanobot.providers.litellm_provider import LiteLLMProvider
@@ -868,100 +851,6 @@ def channels_status():
     console.print(table)
 
 
-def _get_bridge_dir() -> Path:
-    """Get the bridge directory, setting it up if needed."""
-    import shutil
-    import subprocess
-
-    # User's bridge location
-    from nanobot.config.paths import get_bridge_install_dir
-
-    user_bridge = get_bridge_install_dir()
-
-    # Check if already built
-    if (user_bridge / "dist" / "index.js").exists():
-        return user_bridge
-
-    # Check for npm
-    npm_path = shutil.which("npm")
-    if not npm_path:
-        console.print("[red]npm not found. Please install Node.js >= 18.[/red]")
-        raise typer.Exit(1)
-
-    # Find source bridge: first check package data, then source dir
-    pkg_bridge = Path(__file__).parent.parent / "bridge"  # nanobot/bridge (installed)
-    src_bridge = Path(__file__).parent.parent.parent / "bridge"  # repo root/bridge (dev)
-
-    source = None
-    if (pkg_bridge / "package.json").exists():
-        source = pkg_bridge
-    elif (src_bridge / "package.json").exists():
-        source = src_bridge
-
-    if not source:
-        console.print("[red]Bridge source not found.[/red]")
-        console.print("Try reinstalling: pip install --force-reinstall nanobot")
-        raise typer.Exit(1)
-
-    console.print(f"{__logo__} Setting up bridge...")
-
-    # Copy to user directory
-    user_bridge.parent.mkdir(parents=True, exist_ok=True)
-    if user_bridge.exists():
-        shutil.rmtree(user_bridge)
-    shutil.copytree(source, user_bridge, ignore=shutil.ignore_patterns("node_modules", "dist"))
-
-    # Install and build
-    try:
-        console.print("  Installing dependencies...")
-        subprocess.run([npm_path, "install"], cwd=user_bridge, check=True, capture_output=True)
-
-        console.print("  Building...")
-        subprocess.run([npm_path, "run", "build"], cwd=user_bridge, check=True, capture_output=True)
-
-        console.print("[green]✓[/green] Bridge ready\n")
-    except subprocess.CalledProcessError as e:
-        console.print(f"[red]Build failed: {e}[/red]")
-        if e.stderr:
-            console.print(f"[dim]{e.stderr.decode()[:500]}[/dim]")
-        raise typer.Exit(1)
-
-    return user_bridge
-
-
-@channels_app.command("login")
-def channels_login():
-    """Link device via QR code."""
-    import shutil
-    import subprocess
-
-    from nanobot.config.loader import load_config
-    from nanobot.config.paths import get_runtime_subdir
-
-    config = load_config()
-    bridge_dir = _get_bridge_dir()
-
-    console.print(f"{__logo__} Starting bridge...")
-    console.print("Scan the QR code to connect.\n")
-
-    env = {**os.environ}
-    wa_cfg = getattr(config.channels, "whatsapp", None) or {}
-    bridge_token = wa_cfg.get("bridgeToken", "") if isinstance(wa_cfg, dict) else getattr(wa_cfg, "bridge_token", "")
-    if bridge_token:
-        env["BRIDGE_TOKEN"] = bridge_token
-    env["AUTH_DIR"] = str(get_runtime_subdir("whatsapp-auth"))
-
-    npm_path = shutil.which("npm")
-    if not npm_path:
-        console.print("[red]npm not found. Please install Node.js.[/red]")
-        raise typer.Exit(1)
-
-    try:
-        subprocess.run([npm_path, "start"], cwd=bridge_dir, check=True, env=env)
-    except subprocess.CalledProcessError as e:
-        console.print(f"[red]Bridge failed: {e}[/red]")
-
-
 # ============================================================================
 # Plugin Commands
 # ============================================================================
@@ -1066,7 +955,7 @@ def _register_login(name: str):
 
 @provider_app.command("login")
 def provider_login(
-    provider: str = typer.Argument(..., help="OAuth provider (e.g. 'openai-codex', 'github-copilot')"),
+    provider: str = typer.Argument(..., help="OAuth provider (e.g. 'github-copilot')"),
 ):
     """Authenticate with an OAuth provider."""
     from nanobot.providers.registry import PROVIDERS
@@ -1085,30 +974,6 @@ def provider_login(
 
     console.print(f"{__logo__} OAuth Login - {spec.label}\n")
     handler()
-
-
-@_register_login("openai_codex")
-def _login_openai_codex() -> None:
-    try:
-        from oauth_cli_kit import get_token, login_oauth_interactive
-        token = None
-        try:
-            token = get_token()
-        except Exception:
-            pass
-        if not (token and token.access):
-            console.print("[cyan]Starting interactive OAuth login...[/cyan]\n")
-            token = login_oauth_interactive(
-                print_fn=lambda s: console.print(s),
-                prompt_fn=lambda s: typer.prompt(s),
-            )
-        if not (token and token.access):
-            console.print("[red]✗ Authentication failed[/red]")
-            raise typer.Exit(1)
-        console.print(f"[green]✓ Authenticated with OpenAI Codex[/green]  [dim]{token.account_id}[/dim]")
-    except ImportError:
-        console.print("[red]oauth_cli_kit not installed. Run: pip install oauth-cli-kit[/red]")
-        raise typer.Exit(1)
 
 
 @_register_login("github_copilot")
