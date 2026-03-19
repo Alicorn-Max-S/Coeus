@@ -81,15 +81,6 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         is_direct=True,
     ),
 
-    # === Azure OpenAI (direct API calls with API version 2024-10-21) =====
-    ProviderSpec(
-        name="azure_openai",
-        keywords=("azure", "azure-openai"),
-        env_key="",
-        display_name="Azure OpenAI",
-        litellm_prefix="",
-        is_direct=True,
-    ),
     # === Gateways (detected by api_key / api_base, not model name) =========
     # Gateways can route any model, so they win in fallback.
     # OpenRouter: global gateway, keys start with "sk-or-"
@@ -255,24 +246,6 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         default_api_base="",
         strip_model_prefix=False,
         model_overrides=(),
-    ),
-    # OpenAI Codex: uses OAuth, not API key.
-    ProviderSpec(
-        name="openai_codex",
-        keywords=("openai-codex",),
-        env_key="",  # OAuth-based, no API key
-        display_name="OpenAI Codex",
-        litellm_prefix="",  # Not routed through LiteLLM
-        skip_prefixes=(),
-        env_extras=(),
-        is_gateway=False,
-        is_local=False,
-        detect_by_key_prefix="",
-        detect_by_base_keyword="codex",
-        default_api_base="https://chatgpt.com/backend-api",
-        strip_model_prefix=False,
-        model_overrides=(),
-        is_oauth=True,  # OAuth-based authentication
     ),
     # Github Copilot: uses OAuth, not API key.
     ProviderSpec(
