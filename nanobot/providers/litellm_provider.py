@@ -37,7 +37,7 @@ class LiteLLMProvider(LLMProvider):
         self,
         api_key: str | None = None,
         api_base: str | None = None,
-        default_model: str = "mistral/devstral-latest",
+        default_model: str = "mistral/mistral-small-2603",
         extra_headers: dict[str, str] | None = None,
         provider_name: str | None = None,
     ):
