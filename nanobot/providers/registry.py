@@ -198,6 +198,15 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         litellm_prefix="deepseek",
         skip_prefixes=("deepseek/",),
     ),
+    # Mistral: needs "mistral/" prefix for LiteLLM routing.
+    ProviderSpec(
+        name="mistral",
+        keywords=("mistral", "devstral", "codestral", "pixtral", "ministral"),
+        env_key="MISTRAL_API_KEY",
+        display_name="Mistral",
+        litellm_prefix="mistral",
+        skip_prefixes=("mistral/",),
+    ),
     # Gemini: needs "gemini/" prefix for LiteLLM.
     ProviderSpec(
         name="gemini",
